@@ -1,26 +1,13 @@
-# Public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
 
-# Apps using sealed secrets with tokenizer will put this token in the
-# `Proxy-Authorization` header.
-proxy_authorization: "$PROXY_AUTH"
-
 http:
-  # Where ssokenizer should listen
   address: ":$PORT"
 
-# Where users will be sent with the sealed token after the authenticating. The
-# string `:name` will be replaced with the provider name. The string `:profile`
-# will be replaced with the name of the provider profile. This can also be
-# specified on individual providers bellow.
-#
-# return_url: "https://my.app/sso/:profile/:name/callback"
-
 identity_providers:
-  # `google` here is the provider name. Users will go to
-  # https://<ssokenizer_url>/<provider_name>/start to start the oauth dance
   google:
     profile: google
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     client_id: "$OAUTH_GOOGLE_CLIENT_ID"
     client_secret: "$OAUTH_GOOGLE_CLIENT_SECRET"
     return_url: "$BASE_URL/calendar/connection/google/callback"
@@ -31,6 +18,8 @@ identity_providers:
 
   microsoft:
     profile: oauth
+    secret_auth:
+      bearer: "$PROXY_AUTH"
     client_id: "$OAUTH_MS_CLIENT_ID"
     client_secret: "$OAUTH_MS_CLIENT_SECRET"
     auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
