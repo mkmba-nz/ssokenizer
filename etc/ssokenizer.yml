@@ -1,6 +1,10 @@
 # Public part of tokenizer's keypair
 seal_key: "$TOKENIZER_SEAL_KEY"
 
+# Apps using sealed secrets with tokenizer will put this token in the
+# `Proxy-Authorization` header.
+proxy_authorization: "$PROXY_AUTH"
+
 http:
   # Where ssokenizer should listen
   address: ":$PORT"
@@ -16,144 +20,22 @@ identity_providers:
   # `google` here is the provider name. Users will go to
   # https://<ssokenizer_url>/<provider_name>/start to start the oauth dance
   google:
-    # Apps using sealed secrets with tokenizer will put this token in the
-    # `Proxy-Authorization` header.
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-
-    # amazon, bitbucket, facebook, github, gitlab, google, heroku, microsoft,
-    # slack, or oauth.
     profile: google
-
-    # OAuth Client ID - received from identity provider
-    client_id: "$GOOGLE_CLIENT_ID"
-
-    # OAuth Client Secret - received from identity provider
-    client_secret: "$GOOGLE_CLIENT_SECRET"
-
-    # where user should be sent with sealed OAuth token after authenticating
-    return_url: "$GOOGLE_RETURN_URL"
-
-    # OAuth scopes to request. Separate scopes with spaces to specify multiple
-    # scopes in the same line. This makes pulling them from environment
-    # variables easier.
+    client_id: "$OAUTH_GOOGLE_CLIENT_ID"
+    client_secret: "$OAUTH_GOOGLE_CLIENT_SECRET"
+    return_url: "$BASE_URL/calendar/connection/google/callback"
     scopes:
-      - "$GOOGLE_SCOPES"
+      - email
+      - profile
+      - https://www.googleapis.com/auth/calendar.readonly
 
-    # These fields only need to be specified when using a custom "oauth"
-    # provider profile.
-    #
-    # auth_url: $PROVIDER_AUTH_URL
-    # token_url: $PROVIDER_TOKEN_URL
-
-  github:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: github
-    client_id: "$GITHUB_CLIENT_ID"
-    client_secret: "$GITHUB_CLIENT_SECRET"
-    return_url: "$GITHUB_RETURN_URL"
+  microsoft:
+    profile: oauth
+    client_id: "$OAUTH_MS_CLIENT_ID"
+    client_secret: "$OAUTH_MS_CLIENT_SECRET"
+    auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    return_url: "$BASE_URL/calendar/connection/microsoft/callback"
     scopes:
-      - "$GITHUB_SCOPES"
-
-  heroku:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: heroku
-    client_id: "$HEROKU_CLIENT_ID"
-    client_secret: "$HEROKU_CLIENT_SECRET"
-    return_url: "$HEROKU_RETURN_URL"
-    scopes:
-      - "$HEROKU_SCOPES"
-
-  # Same configurations except for name and return_url to allow authentication
-  # to staging environments with same OAuth client.
-  google_staging:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: google
-    client_id: "$GOOGLE_CLIENT_ID"
-    client_secret: "$GOOGLE_CLIENT_SECRET"
-    return_url: "$GOOGLE_STAGING_RETURN_URL"
-    scopes:
-      - "$GOOGLE_SCOPES"
-
-  google_staging_2:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: google
-    client_id: "$GOOGLE_CLIENT_ID"
-    client_secret: "$GOOGLE_CLIENT_SECRET"
-    return_url: "$GOOGLE_STAGING_2_RETURN_URL"
-    scopes:
-      - "$GOOGLE_SCOPES"
-
-  github_staging:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: github
-    client_id: "$GITHUB_CLIENT_ID"
-    client_secret: "$GITHUB_CLIENT_SECRET"
-    return_url: "$GITHUB_STAGING_RETURN_URL"
-    scopes:
-      - "$GITHUB_SCOPES"
-
-  github_staging_2:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: github
-    client_id: "$GITHUB_CLIENT_ID"
-    client_secret: "$GITHUB_CLIENT_SECRET"
-    return_url: "$GITHUB_STAGING_2_RETURN_URL"
-    scopes:
-      - "$GITHUB_SCOPES"
-
-  heroku_staging:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: heroku
-    client_id: "$HEROKU_CLIENT_ID"
-    client_secret: "$HEROKU_CLIENT_SECRET"
-    return_url: "$HEROKU_STAGING_RETURN_URL"
-    scopes:
-      - "$HEROKU_SCOPES"
-
-  heroku_staging_2:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: heroku
-    client_id: "$HEROKU_CLIENT_ID"
-    client_secret: "$HEROKU_CLIENT_SECRET"
-    return_url: "$HEROKU_STAGING_2_RETURN_URL"
-    scopes:
-      - "$HEROKU_SCOPES"
-
-  google_auth:
-    secret_auth:
-      bearer_digest: "$AUTH_DIGEST"
-    profile: google
-    client_id: "$GOOGLE_CLIENT_ID"
-    client_secret: "$GOOGLE_CLIENT_SECRET"
-    return_url: "$GOOGLE_AUTH_RETURN_URL"
-    scopes:
-      - "$GOOGLE_SCOPES"
-
-  github_auth:
-    secret_auth:
-      bearer_digest: "$AUTH_DIGEST"
-    profile: github
-    client_id: "$GITHUB_CLIENT_ID"
-    client_secret: "$GITHUB_CLIENT_SECRET"
-    return_url: "$GITHUB_AUTH_RETURN_URL"
-    scopes:
-      - "$GITHUB_AUTH_SCOPES"
-
-  vanta:
-    secret_auth:
-      bearer: "$PROXY_AUTH"
-    profile: vanta
-    client_id: "$VANTA_CLIENT_ID"
-    client_secret: "$VANTA_CLIENT_SECRET"
-    return_url: "$VANTA_RETURN_URL"
-    scopes:
-      - "$VANTA_AUTH_SCOPES"      
+      - offline_access
+      - Calendars.Read
