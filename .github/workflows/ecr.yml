@@ -4,15 +4,21 @@ permissions:
   contents: read
 
 on:
-    workflow_run:
-        workflows: ["Push"]
-        types:
-            - completed
+  push:
+    branches:
+      - ocopt-config
 
 jobs:
-  docker:
+  test:
     runs-on: ubuntu-latest
-    if:  ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+      - run: go test -v ./...
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
