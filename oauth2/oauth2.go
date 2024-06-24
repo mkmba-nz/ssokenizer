@@ -84,6 +84,9 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	if hd := r.URL.Query().Get("hd"); hd != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
 	}
+	if prompt := r.URL.Query().Get("prompt"); prompt != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
+	}
 
 	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, opts...), http.StatusFound)
 }
