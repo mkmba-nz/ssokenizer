@@ -28,3 +28,14 @@ identity_providers:
     scopes:
       - offline_access
       - Calendars.Read
+
+  slack:
+    profile: slack
+    secret_auth:
+      bearer: "$PROXY_AUTH"
+    client_id: "$OAUTH_SLACK_CLIENT_ID"
+    client_secret: "$OAUTH_SLACK_CLIENT_SECRET"
+    return_url: "$BASE_URL/slack_connections/callback"
+    scopes:
+      - channels:read
+      - chat:write
