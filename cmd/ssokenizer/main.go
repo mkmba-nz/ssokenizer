@@ -22,7 +22,6 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/heroku"
 	"golang.org/x/oauth2/microsoft"
-	"golang.org/x/oauth2/slack"
 	"gopkg.in/yaml.v3"
 )
 
@@ -275,8 +274,12 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				ClientID:     c.ClientID,
 				ClientSecret: c.ClientSecret,
 				Scopes:       c.Scopes,
-				Endpoint:     slack.Endpoint,
+				Endpoint: xoauth2.Endpoint{
+					AuthURL:  "https://slack.com/oauth/v2/authorize",
+					TokenURL: "https://slack.com/api/oauth.v2.access",
+				},
 			},
+			CustomExchange: slackExchange,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)
