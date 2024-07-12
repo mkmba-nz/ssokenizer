@@ -1,6 +1,7 @@
 package oauth2
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -31,6 +32,10 @@ type Config struct {
 	// ForwardParams are the parameters that should be forwarded from the start
 	// request to the auth URL.
 	ForwardParams []string
+
+	// Custom Exchange routine, if present used in preference to the oauth2.Config.Exchange
+	// method.
+	CustomExchange func(context.Context, oauth2.Config, string) (*oauth2.Token, string, error)
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
@@ -136,14 +141,28 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.config(r).Exchange(r.Context(), code, oauth2.AccessTypeOffline)
-	if err != nil {
-		r = withError(r, fmt.Errorf("failed exchange: %w", err))
-		tr.ReturnError(w, r, "bad response")
-		return
-	}
+	var tok *oauth2.Token
+	var metadata string
 
-	r = withIdToken(r, tok)
+	c := p.config(r)
+	if c.CustomExchange != nil {
+		var err error
+		tok, metadata, err = c.CustomExchange(r.Context(), c.Config, code)
+		if err != nil {
+			r = withError(r, fmt.Errorf("failed custom exchange: %w", err))
+			tr.ReturnError(w, r, "bad response")
+			return
+		}
+	} else {
+		var err error
+		tok, err = c.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+		if err != nil {
+			r = withError(r, fmt.Errorf("failed exchange: %w", err))
+			tr.ReturnError(w, r, "bad response")
+			return
+		}
+		r = withIdToken(r, tok)
+	}
 
 	if t := tok.Type(); t != "Bearer" {
 		r = withField(r, "type", t)
@@ -172,6 +191,9 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	rd := map[string]string{"sealed": sealed}
 	if !tok.Expiry.IsZero() {
 		rd["expires"] = strconv.FormatInt(tok.Expiry.Unix(), 10)
+	}
+	if metadata != "" {
+		rd["metadata"] = metadata
 	}
 	tr.ReturnData(w, r, rd)
 }
