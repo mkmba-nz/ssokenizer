@@ -158,10 +158,11 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tr.ReturnData(w, r, map[string]string{
-		"sealed":  sealed,
-		"expires": strconv.FormatInt(tok.Expiry.Unix(), 10),
-	})
+	rd := map[string]string{"sealed": sealed}
+	if !tok.Expiry.IsZero() {
+		rd["expires"] = strconv.FormatInt(tok.Expiry.Unix(), 10)
+	}
+	tr.ReturnData(w, r, rd)
 }
 
 func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
