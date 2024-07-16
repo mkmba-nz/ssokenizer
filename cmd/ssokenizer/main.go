@@ -297,6 +297,7 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				},
 			},
 			CustomExchange: slackExchange,
+			CustomRefresh:  slackRefresh,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)
