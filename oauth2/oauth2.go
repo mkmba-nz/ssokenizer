@@ -36,6 +36,10 @@ type Config struct {
 	// Custom Exchange routine, if present used in preference to the oauth2.Config.Exchange
 	// method.
 	CustomExchange func(context.Context, oauth2.Config, string) (*oauth2.Token, string, error)
+
+	// Custom Refresh routine, if present used in preference to the oauth2.TokenSource based
+	// refresh method.
+	CustomRefresh func(context.Context, oauth2.Config, *oauth2.Token) (*oauth2.Token, error)
 }
 
 var _ ssokenizer.ProviderConfig = Config{}
@@ -143,26 +147,26 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	var tok *oauth2.Token
 	var metadata string
+	var err error
 
 	c := p.config(r)
 	if c.CustomExchange != nil {
-		var err error
 		tok, metadata, err = c.CustomExchange(r.Context(), c.Config, code)
 		if err != nil {
-			r = withError(r, fmt.Errorf("failed custom exchange: %w", err))
-			tr.ReturnError(w, r, "bad response")
-			return
+			err = fmt.Errorf("failed custom exchange: %w", err)
 		}
 	} else {
-		var err error
 		tok, err = c.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
 		if err != nil {
-			r = withError(r, fmt.Errorf("failed exchange: %w", err))
-			tr.ReturnError(w, r, "bad response")
-			return
+			err = fmt.Errorf("failed exchange: %w", err)
 		}
-		r = withIdToken(r, tok)
 	}
+	if err != nil {
+		r = withError(r, err)
+		tr.ReturnError(w, r, "bad response")
+		return
+	}
+	r = withIdToken(r, tok)
 
 	if t := tok.Type(); t != "Bearer" {
 		r = withField(r, "type", t)
@@ -199,7 +203,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	refreshToken, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	refreshTokenString, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		getLog(r).
 			WithField("status", http.StatusUnauthorized).
@@ -209,7 +213,23 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := p.config(r).TokenSource(r.Context(), &oauth2.Token{RefreshToken: refreshToken}).Token()
+	refreshToken := &oauth2.Token{RefreshToken: refreshTokenString}
+
+	var tok *oauth2.Token
+	var err error
+
+	c := p.config(r)
+	if c.CustomRefresh != nil {
+		tok, err = c.CustomRefresh(r.Context(), c.Config, refreshToken)
+		if err != nil {
+			err = fmt.Errorf("failed custom refresh: %w", err)
+		}
+	} else {
+		tok, err = p.config(r).TokenSource(r.Context(), refreshToken).Token()
+		if err != nil {
+			err = fmt.Errorf("failed refresh: %w", err)
+		}
+	}
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusBadGateway).
