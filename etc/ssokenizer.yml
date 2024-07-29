@@ -38,5 +38,11 @@ identity_providers:
     return_url: "$BASE_URL/slack_connections/callback"
     scopes:
       - app_mentions:read
+      - channels:read
       - chat:write
+      - groups:read
       - im:history
+      - im:read
+      - mpim:read
+      - reactions:read
+      - reactions:write
