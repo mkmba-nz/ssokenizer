@@ -43,6 +43,5 @@ identity_providers:
       - groups:read
       - im:history
       - im:read
-      - mpim:read
       - reactions:read
       - reactions:write
