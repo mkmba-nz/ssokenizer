@@ -278,6 +278,16 @@ func (c IdentityProviderConfig) providerConfig(name, returnURL string) (ssokeniz
 				Endpoint:     slack.Endpoint,
 			},
 		}, nil
+	case "squadcast":
+		return &oauth2.Config{
+			Path: "/" + name,
+			Config: xoauth2.Config{
+				ClientID:     c.ClientID,
+				ClientSecret: c.ClientSecret,
+				Scopes:       c.Scopes,
+			},
+			CustomRefresh: squadcastRefresh,
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown identity provider profile: %s", c.Profile)
 	}
