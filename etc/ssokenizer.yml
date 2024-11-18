@@ -45,3 +45,12 @@ identity_providers:
       - im:read
       - reactions:read
       - reactions:write
+
+  squadcast:
+      profile: squadcast
+      secret_auth:
+        bearer: "$PROXY_AUTH"
+      client_id: "x"
+      client_secret: "x"
+      token_url: "https://auth.squadcast.com/oauth/access-token"
+      return_url: "$BASE_URL"
