@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -37,7 +36,6 @@ func slackExchange(ctx context.Context, conf oauth2.Config, code string) (*oauth
 // Implements a custom version of oauth.Refresh that deals with the fact slack returns a token type other than Bearer which
 // the oauth2 package does not like - metadata is not actually used here!
 func slackRefresh(ctx context.Context, conf oauth2.Config, refreshToken *oauth2.Token) (*oauth2.Token, error) {
-	fmt.Println("Refresh with token: ", refreshToken.RefreshToken)
 	r, err := slack.RefreshOAuthV2TokenContext(ctx, http.DefaultClient, conf.ClientID, conf.ClientSecret, refreshToken.RefreshToken)
 	if err != nil {
 		return nil, err
