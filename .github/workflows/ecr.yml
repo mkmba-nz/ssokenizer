@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     branches:
-      - ocopt-production
+      - ocopt/production
 
 jobs:
   test:
