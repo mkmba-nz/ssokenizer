@@ -29,6 +29,10 @@ type Config struct {
 	// no need to anchor regexes.
 	AllowedHostPattern string
 
+	// ForwardParams are the parameters that should be forwarded from the start
+	// request to the auth URL.
+	ForwardParams []string
+
 	// Custom Exchange routine, if present used in preference to the oauth2.Config.Exchange
 	// method.
 	CustomExchange func(context.Context, oauth2.Config, string) (*oauth2.Token, string, error)
@@ -90,17 +94,21 @@ func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	if tr == nil {
 		return
 	}
+	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
-	if hd := r.URL.Query().Get("hd"); hd != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("hd", hd))
+	for _, param := range cfg.ForwardParams {
+		if value := r.URL.Query().Get(param); value != "" {
+			opts = append(opts, oauth2.SetAuthURLParam(param, value))
+		}
 	}
 	if prompt := r.URL.Query().Get("prompt"); prompt != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
 	}
 
-	http.Redirect(w, r, p.config(r).AuthCodeURL(tr.Nonce, opts...), http.StatusFound)
+	url := cfg.AuthCodeURL(tr.Nonce, opts...)
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
