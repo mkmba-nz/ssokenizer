@@ -2,7 +2,7 @@ name: compliance tests
 
 on:
   pull_request:
-    branches: [ "ocopt/production" ]
+    branches: [ "main" ]
 
 
 jobs:
