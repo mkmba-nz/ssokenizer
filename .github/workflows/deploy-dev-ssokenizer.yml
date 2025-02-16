@@ -24,7 +24,7 @@ jobs:
     secrets: inherit
     with:
       repo-name: ssokenizer
-      content: .
+      context: .
 
   deploy-ssokenizer:
       needs: build-and-push-ssokenizer
