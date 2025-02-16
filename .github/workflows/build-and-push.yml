@@ -1,0 +1,50 @@
+name: build-and-push
+permissions:
+    id-token: write
+    contents: read
+
+on:
+  workflow_call:
+    inputs:
+      repo-name:
+          required: true
+          type: string
+      context:
+        required: true
+        type: string
+      target:
+        required: false
+        type: string
+      build-args:
+        required: false
+        type: string
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.project_number }}:role/${{ vars.role_name }}
+          aws-region: us-east-2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push docker image to Amazon ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          target: ${{ inputs.target }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          build-args: ${{ inputs.build-args }}
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ inputs.repo-name }}:${{ github.sha }}
+          github-token: ${{ secrets.GIT_PAT }}
