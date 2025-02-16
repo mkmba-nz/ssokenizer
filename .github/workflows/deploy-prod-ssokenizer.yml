@@ -1,0 +1,22 @@
+name: deploy-prod-ssokenizer
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  push:
+    tags: [ "prod.ssokenizer.*"]
+
+jobs:
+  deploy:
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-ssokenizer
+    uses: ./.github/workflows/deploy-to-ecs.yml
+    secrets: inherit
+    with:
+      region: us-east-2
+      cluster-name: prod
+      repo-name: ssokenizer
+      task-family: prod-ssokenizer
+      service-name: prod-ssokenizer
+      deployed-to-env: prod
