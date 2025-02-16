@@ -1,0 +1,87 @@
+# Re-usable workflow to deploy a previously built image.
+name: deploy-to-ecs
+permissions:
+  id-token: write
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      region:
+        required: true
+        type: string
+      repo-name:
+          required: true
+          type: string
+      cluster-name:
+        required: true
+        type: string
+      task-family:
+        required: true
+        type: string
+      service-name:
+        required: false
+        type: string
+        description: "service name to deploy to; if present will wait for stability; leave blank to only push the taskdef."
+      parameter-prefix:
+        required: false
+        type: string
+        description: "prefix of SSM parameter to update; if blank task-family will be used."
+      put-version:
+        required: false
+        type: boolean
+        description: "whether to store the new version into SSM"
+        default: true
+      deployed-to-env:
+        required: false
+        type: string
+        description: "if set (blank by default) will add a tag of the form name of 'ENV.deployed.TS to the ECR image after deployment."
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::${{ vars.project_number }}:role/${{ vars.role_name}}
+        aws-region: ${{ inputs.region }}
+
+    - name: wait for ECR replication
+      uses: siketyan/wait-for-ecr-replication-action@v1.1.4
+      if: ${{ inputs.region != 'us-east-2' }}
+      with:
+        image_tag: ${{ github.sha }}
+        repository_uri: ${{ vars.project_number }}.dkr.ecr.us-east-2.amazonaws.com/${{ inputs.repo-name }}
+
+    - name: fetch current task definition
+      run: |
+        aws ecs describe-task-definition --task-definition ${{ inputs.task-family }}-template --query taskDefinition > template.json
+
+    - name: render updated definition
+      id: render
+      run: |
+        cat template.json | \
+        jq 'setpath(["containerDefinitions", 0, "image"]; "${{ vars.project_number }}.dkr.ecr.${{ inputs.region }}.amazonaws.com/${{ inputs.repo-name }}:${{ github.sha }}")' | \
+        jq 'setpath(["family"]; "${{ inputs.task-family }}") | delpaths([["taskDefinitionArn"],["registeredAt"],["registeredBy"]])' \
+        > task-definition.json
+        cat task-definition.json
+        echo "task-definition=task-definition.json" >> "$GITHUB_OUTPUT"
+
+    - name: deploy to ECS cluster - ${{ inputs.cluster-name }}
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: ${{ steps.render.outputs.task-definition }}
+        cluster: ${{ inputs.cluster-name }}
+        service: ${{ inputs.service-name }}
+        wait-for-service-stability: ${{ inputs.service-name != '' }}
+
+    - name: store updated image version in SSM
+      if: ${{ inputs.put-version }}
+      run: |
+        aws ssm put-parameter --name /${{ inputs.parameter-prefix != '' && inputs.parameter-prefix || inputs.task-family }}/image_tag --type String --value ${{ github.sha }} --overwrite
+
+    - name: add deployment tag to image in ECR as a docker tag
+      if: ${{ inputs.deployed-to-env != '' }}
+      run: |
+        MANIFEST=$(aws ecr batch-get-image --repository-name ${{ inputs.repo-name }} --image-ids imageTag=${{ github.sha }} --output text --query 'images[].imageManifest')
+        aws ecr put-image --repository-name ${{ inputs.repo-name }} --image-tag "${{ inputs.deployed-to-env }}.deployed.$(date +%Y%m%d.%H%M)" --image-manifest "$MANIFEST"

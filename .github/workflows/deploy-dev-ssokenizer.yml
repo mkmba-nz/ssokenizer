@@ -20,7 +20,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
-    uses: mkmba-nz/github-infra/.github/workflows/build-and-push.yml@main
+    uses: .github/workflows/build-and-push.yml
     secrets: inherit
     with:
       repo-name: ssokenizer
@@ -30,7 +30,7 @@ jobs:
       needs: build-and-push-ssokenizer
       concurrency:
         group: ${{ github.workflow }}-${{ github.ref }}
-      uses: mkmba-nz/github-infra/.github/workflows/deploy-to-ecs.yml@main
+      uses: .github/workflows/deploy-to-ecs.yml
       secrets: inherit
       with:
         region: ap-southeast-2
