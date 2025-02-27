@@ -13,7 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - name: Set up Go
+        uses: mkmba-nz/github-infra/actions/setup-go@HEAD
+        with:
+          dockerfile: Dockerfile
       - run: go test -v ./...
 
   build-and-push-ssokenizer:
