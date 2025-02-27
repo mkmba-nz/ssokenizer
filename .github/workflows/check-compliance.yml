@@ -12,7 +12,9 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: mkmba-nz/github-infra/actions/setup-go@HEAD
+      with:
+        dockerfile: Dockerfile
 
     - name: Run tests
       run: go test ./...
