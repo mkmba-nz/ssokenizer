@@ -1,6 +1,6 @@
 module github.com/superfly/ssokenizer
 
-go 1.22.0
+go 1.23.0
 
 toolchain go1.23.2
 
@@ -10,7 +10,7 @@ require (
 	github.com/slack-go/slack v0.13.0
 	github.com/superfly/tokenizer v0.0.2
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.35.0
 	golang.org/x/exp v0.0.0-20241210194714-1829a127f884
 	golang.org/x/oauth2 v0.10.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -25,9 +25,9 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.36.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
