@@ -13,7 +13,7 @@ import (
 
 // Implements a custom version of oauth.Config.Exchange that handles the additional metadata Slack returns alongside the access/refresh
 // tokens, and returns it as a gzipped, base64 encoded string after stripping any tokens from it.
-func slackExchange(ctx context.Context, conf oauth2.Config, code string) (*oauth2.Token, string, error) {
+func slackExchange(ctx context.Context, conf oauth2.Config, code string, _ ...oauth2.AuthCodeOption) (*oauth2.Token, string, error) {
 	r, err := slack.GetOAuthV2ResponseContext(ctx, http.DefaultClient, conf.ClientID, conf.ClientSecret, code, conf.RedirectURL)
 	if err != nil {
 		return nil, "", err

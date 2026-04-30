@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,54 +18,28 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Config struct {
-	oauth2.Config
-
-	// Path where this provider is mounted
-	Path string
-
-	// Regexp of hosts that oauth tokens are allowed to be used with. There is
-	// no need to anchor regexes.
-	AllowedHostPattern string
+type Provider struct {
+	ssokenizer.ProviderConfig
+	OAuthConfig oauth2.Config
 
 	// ForwardParams are the parameters that should be forwarded from the start
 	// request to the auth URL.
 	ForwardParams []string
 
-	// Custom Exchange routine, if present used in preference to the oauth2.Config.Exchange
-	// method.
-	CustomExchange func(context.Context, oauth2.Config, string) (*oauth2.Token, string, error)
+	// Params to add to the auth request.
+	AuthRequestParams map[string]string
 
-	// Custom Refresh routine, if present used in preference to the oauth2.TokenSource based
-	// refresh method.
+	// Params to add to the token request.
+	TokenRequestParams map[string]string
+
+	// CustomExchange, if set, is used in preference to OAuthConfig.Exchange.
+	CustomExchange func(context.Context, oauth2.Config, string, ...oauth2.AuthCodeOption) (*oauth2.Token, string, error)
+
+	// CustomRefresh, if set, is used in preference to OAuthConfig.TokenSource refresh.
 	CustomRefresh func(context.Context, oauth2.Config, *oauth2.Token) (*oauth2.Token, error)
 }
 
-var _ ssokenizer.ProviderConfig = Config{}
-
-// implements ssokenizer.ProviderConfig
-func (c Config) Register(sealKey string, auth tokenizer.AuthConfig) (http.Handler, error) {
-	switch {
-	case c.ClientID == "":
-		return nil, errors.New("missing client_id")
-	case c.ClientSecret == "":
-		return nil, errors.New("missing client_secret")
-	}
-
-	return &provider{
-		sealKey:                  sealKey,
-		auth:                     auth,
-		AllowedHostPattern:       c.AllowedHostPattern,
-		configWithoutRedirectURL: c,
-	}, nil
-}
-
-type provider struct {
-	sealKey                  string
-	auth                     tokenizer.AuthConfig
-	AllowedHostPattern       string
-	configWithoutRedirectURL Config
-}
+var _ ssokenizer.Provider = (*Provider)(nil)
 
 const (
 	startPath    = "/start"
@@ -74,7 +47,30 @@ const (
 	refreshPath  = "/refresh"
 )
 
-func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// PC implements the ssokenizer.Provider interface.
+func (p *Provider) PC() *ssokenizer.ProviderConfig {
+	return &p.ProviderConfig
+}
+
+// Validate implements the ssokenizer.Provider interface.
+func (p *Provider) Validate() error {
+	switch err := p.ProviderConfig.Validate(); {
+	case err != nil:
+		return err
+	case p.OAuthConfig.ClientID == "":
+		return errors.New("missing client_id")
+	case p.OAuthConfig.ClientSecret == "":
+		return errors.New("missing client_secret")
+	case p.OAuthConfig.Endpoint.AuthURL == "":
+		return errors.New("missing auth_url")
+	case p.OAuthConfig.Endpoint.TokenURL == "":
+		return errors.New("missing token_url")
+	default:
+		return nil
+	}
+}
+
+func (p *Provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch path := strings.TrimSuffix(r.URL.Path, "/"); path {
 	case startPath:
 		p.handleStart(w, r)
@@ -87,31 +83,47 @@ func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *provider) handleStart(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleStart(w http.ResponseWriter, r *http.Request) {
 	defer getLog(r).WithField("status", http.StatusFound).Info()
 
 	tr := ssokenizer.StartTransaction(w, r)
 	if tr == nil {
 		return
 	}
-	cfg := p.config(r)
 
 	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
 
-	for _, param := range cfg.ForwardParams {
+	// Store forwarded parameters in transaction so they can be used in token exchange
+	tr.ForwardedParams = make(map[string]string)
+	for _, param := range p.ForwardParams {
 		if value := r.URL.Query().Get(param); value != "" {
 			opts = append(opts, oauth2.SetAuthURLParam(param, value))
+			tr.ForwardedParams[param] = value
 		}
 	}
-	if prompt := r.URL.Query().Get("prompt"); prompt != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
+
+	// Re-save transaction with forwarded params
+	if len(tr.ForwardedParams) > 0 {
+		if err := ssokenizer.SaveTransaction(w, r, tr); err != nil {
+			r = withError(r, fmt.Errorf("save transaction: %w", err))
+			tr.ReturnError(w, r, "unexpected error")
+			return
+		}
 	}
 
-	url := cfg.AuthCodeURL(tr.Nonce, opts...)
+	for key, value := range p.AuthRequestParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+
+	if p.OAuthConfig.RedirectURL == "" {
+		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
+	}
+
+	url := p.OAuthConfig.AuthCodeURL(tr.Nonce, opts...)
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	tr := ssokenizer.RestoreTransaction(w, r)
 	if tr == nil {
 		return
@@ -145,18 +157,32 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+
+	// Add forwarded parameters from the start request to the token request
+	for key, value := range tr.ForwardedParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+
+	for key, value := range p.TokenRequestParams {
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+
+	if p.OAuthConfig.RedirectURL == "" {
+		opts = append(opts, oauth2.SetAuthURLParam("redirect_uri", p.URL.JoinPath(callbackPath).String()))
+	}
+
 	var tok *oauth2.Token
 	var metadata string
 	var err error
 
-	c := p.config(r)
-	if c.CustomExchange != nil {
-		tok, metadata, err = c.CustomExchange(r.Context(), c.Config, code)
+	if p.CustomExchange != nil {
+		tok, metadata, err = p.CustomExchange(r.Context(), p.OAuthConfig, code, opts...)
 		if err != nil {
 			err = fmt.Errorf("failed custom exchange: %w", err)
 		}
 	} else {
-		tok, err = c.Exchange(r.Context(), code, oauth2.AccessTypeOffline)
+		tok, err = p.OAuthConfig.Exchange(r.Context(), code, opts...)
 		if err != nil {
 			err = fmt.Errorf("failed exchange: %w", err)
 		}
@@ -175,17 +201,11 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := &tokenizer.Secret{
-		AuthConfig: p.auth,
-		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
-			Token: &tokenizer.OAuthToken{
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken},
-		},
-		RequestValidators: p.requestValidators(r),
-	}
-
-	sealed, err := secret.Seal(p.sealKey)
+	sealed, err := p.Tokenizer.SealedSecret(&tokenizer.OAuthProcessorConfig{
+		Token: &tokenizer.OAuthToken{
+			AccessToken:  tok.AccessToken,
+			RefreshToken: tok.RefreshToken},
+	})
 	if err != nil {
 		r = withError(r, fmt.Errorf("failed seal: %w", err))
 		tr.ReturnError(w, r, "seal error")
@@ -202,7 +222,7 @@ func (p *provider) handleCallback(w http.ResponseWriter, r *http.Request) {
 	tr.ReturnData(w, r, rd)
 }
 
-func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
+func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	refreshTokenString, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		getLog(r).
@@ -214,18 +234,16 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	refreshToken := &oauth2.Token{RefreshToken: refreshTokenString}
-
 	var tok *oauth2.Token
 	var err error
 
-	c := p.config(r)
-	if c.CustomRefresh != nil {
-		tok, err = c.CustomRefresh(r.Context(), c.Config, refreshToken)
+	if p.CustomRefresh != nil {
+		tok, err = p.CustomRefresh(r.Context(), p.OAuthConfig, refreshToken)
 		if err != nil {
 			err = fmt.Errorf("failed custom refresh: %w", err)
 		}
 	} else {
-		tok, err = p.config(r).TokenSource(r.Context(), refreshToken).Token()
+		tok, err = p.OAuthConfig.TokenSource(r.Context(), refreshToken).Token()
 		if err != nil {
 			err = fmt.Errorf("failed refresh: %w", err)
 		}
@@ -252,18 +270,12 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	secret := &tokenizer.Secret{
-		AuthConfig: p.auth,
-		ProcessorConfig: &tokenizer.OAuthProcessorConfig{
-			Token: &tokenizer.OAuthToken{
-				AccessToken:  tok.AccessToken,
-				RefreshToken: tok.RefreshToken,
-			},
+	sealed, err := p.Tokenizer.SealedSecret(&tokenizer.OAuthProcessorConfig{
+		Token: &tokenizer.OAuthToken{
+			AccessToken:  tok.AccessToken,
+			RefreshToken: tok.RefreshToken,
 		},
-		RequestValidators: p.requestValidators(r),
-	}
-
-	sealed, err := secret.Seal(p.sealKey)
+	})
 	if err != nil {
 		getLog(r).
 			WithField("status", http.StatusInternalServerError).
@@ -289,27 +301,6 @@ func (p *provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	getLog(r).
 		WithField("status", http.StatusOK).
 		Info()
-}
-
-func (p *provider) config(r *http.Request) *Config {
-	scheme := "http://"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https://"
-	}
-	cfg := p.configWithoutRedirectURL
-	cfg.RedirectURL = scheme + r.Host + cfg.Path + callbackPath
-
-	return &cfg
-}
-
-func (p *provider) requestValidators(r *http.Request) []tokenizer.RequestValidator {
-	if p.AllowedHostPattern == "" {
-		return nil
-	}
-	// clients need to be able to send refresh tokens to ssokenizer itself, so
-	// we add ourself to the allowed-host pattern.
-	re := regexp.MustCompile(fmt.Sprintf("^(%s|%s)$", regexp.QuoteMeta(r.Host), p.AllowedHostPattern))
-	return []tokenizer.RequestValidator{tokenizer.AllowHostPattern(re)}
 }
 
 // logging helpers. aliased for convenience
