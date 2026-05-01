@@ -5,27 +5,32 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/slack-go/slack"
 	"golang.org/x/oauth2"
 )
 
-// Implements a custom version of oauth.Config.Exchange that handles the additional metadata Slack returns alongside the access/refresh
+// Implements a custom version of oauth.Config.Exchange that handles the additional metadata Slack returns alongside the access/refresh      │
 // tokens, and returns it as a gzipped, base64 encoded string after stripping any tokens from it.
-func slackExchange(ctx context.Context, conf oauth2.Config, code string) (*oauth2.Token, string, error) {
-	r, err := slack.GetOAuthV2ResponseContext(ctx, http.DefaultClient, conf.ClientID, conf.ClientSecret, code, conf.RedirectURL)
+func slackExchange(ctx context.Context, conf oauth2.Config, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, string, error) {
+	// oauth2.AuthCodeOption.setValue is unexported; apply opts via AuthCodeURL
+	// then parse redirect_uri back out of the resulting URL.
+	var redirectURL string
+	if u, err := url.Parse(conf.AuthCodeURL("", opts...)); err == nil {
+		redirectURL = u.Query().Get("redirect_uri")
+	}
+
+	r, err := slack.GetOAuthV2ResponseContext(ctx, http.DefaultClient, conf.ClientID, conf.ClientSecret, code, redirectURL)
 	if err != nil {
 		return nil, "", err
 	}
-	// Convert response to oauth2.Token
 	tok := slackToToken(r)
-	// Strip token(s) from response
 	r.AccessToken = ""
 	r.RefreshToken = ""
 	r.AuthedUser.AccessToken = ""  // TODO: no useful way to return this from ssokenizer currently.
 	r.AuthedUser.RefreshToken = "" // TODO: no useful way to return this from ssokenizer currently.
-	// Serialize stripped token back as metadata
 	mdB, err := json.Marshal(r)
 	if err != nil {
 		return nil, "", err
