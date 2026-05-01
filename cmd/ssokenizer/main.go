@@ -151,7 +151,7 @@ func (c *Config) validate() error {
 // hostname pattern we want to allow for a given provider, we also include our
 // own hostname so tokenizer can send us requests for refresh tokens.
 func (c *Config) tokenizerHostValidator(pattern string) []tokenizer.RequestValidator {
-	re := regexp.MustCompile(fmt.Sprintf("^(%s|%s)$", regexp.QuoteMeta(c.ssokenizerURL.Hostname()), pattern))
+	re := regexp.MustCompile(fmt.Sprintf("^(%s(:\\d+)?|%s)$", regexp.QuoteMeta(c.ssokenizerURL.Hostname()), pattern))
 	return []tokenizer.RequestValidator{tokenizer.AllowHostPattern(re)}
 }
 
