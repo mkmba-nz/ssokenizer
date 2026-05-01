@@ -19,6 +19,8 @@ jobs:
           dockerfile: Dockerfile
       - run: go test -v ./...
 
+  # not this job cannot be rerun after succeeding due to 
+  # ECR tag immutability requirements!
   build-and-push-ssokenizer:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
