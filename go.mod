@@ -1,13 +1,11 @@
 module github.com/superfly/ssokenizer
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.25
 
 require (
 	github.com/alecthomas/assert/v2 v2.3.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/slack-go/slack v0.13.0
+	github.com/slack-go/slack v0.23.1
 	github.com/superfly/tokenizer v0.0.3-0.20250311175830-aae794513aa1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	golang.org/x/crypto v0.46.0
