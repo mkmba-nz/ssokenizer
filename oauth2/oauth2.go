@@ -249,12 +249,33 @@ func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		getLog(r).
-			WithField("status", http.StatusBadGateway).
-			WithError(err).
-			Info("refresh")
+		var re *oauth2.RetrieveError
+		var rfe *RefreshError
+		switch {
+		case errors.As(err, &re) && re.Response != nil && re.ErrorCode != "":
+			// Standard path: the provider returned a structured RFC 6749 §5.2
+			// error (e.g. 400 invalid_grant). Forward the real upstream status
+			// and a normalized error body so callers can tell a dead credential
+			// from a transient gateway failure. We reconstruct the body from the
+			// already-parsed fields rather than echoing the upstream bytes:
+			// ssokenizer is a secret-isolation boundary and must not relay
+			// arbitrary upstream content downstream.
+			writeRefreshError(w, r, re.Response.StatusCode, re.ErrorCode, re.ErrorDescription, err)
+		case errors.As(err, &rfe):
+			// Custom refresh (Slack/SquadCast) recognized a definitive,
+			// non-retryable OAuth error and normalized it for us.
+			writeRefreshError(w, r, rfe.Status, rfe.Code, rfe.Description, err)
+		default:
+			// No structured error → genuine transport/network failure (we never
+			// reached the provider, or it answered unintelligibly). Keep the
+			// bodiless 502 so callers treat it as transient.
+			getLog(r).
+				WithField("status", http.StatusBadGateway).
+				WithError(err).
+				Info("refresh")
 
-		w.WriteHeader(http.StatusBadGateway)
+			w.WriteHeader(http.StatusBadGateway)
+		}
 		return
 	}
 
@@ -301,6 +322,64 @@ func (p *Provider) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	getLog(r).
 		WithField("status", http.StatusOK).
 		Info()
+}
+
+// RefreshError is returned by a CustomRefresh function to signal that the
+// provider gave a structured, definitive OAuth error (a dead credential)
+// rather than a transient transport failure. handleRefresh forwards Status and
+// Code to the caller so it can stop retrying and prompt a reconnect. Custom
+// refresh paths whose providers don't surface a standard *oauth2.RetrieveError
+// (e.g. Slack, SquadCast) use this to opt into the same propagation; any error
+// that is not a RefreshError falls through to the bodiless 502 transient path.
+type RefreshError struct {
+	// Status is the HTTP status handleRefresh will return (e.g. 400).
+	Status int
+	// Code is the RFC 6749 §5.2 error code placed in the response body
+	// (e.g. "invalid_grant"). It must contain no secrets.
+	Code string
+	// Description is an optional, secret-free human-readable detail.
+	Description string
+	// Err is the underlying error, preserved for logging and unwrapping.
+	Err error
+}
+
+func (e *RefreshError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return e.Code
+}
+
+func (e *RefreshError) Unwrap() error { return e.Err }
+
+// writeRefreshError writes a normalized RFC 6749 §5.2 error response. The body
+// is reconstructed from the parsed code/description (never the upstream bytes),
+// so no arbitrary provider content crosses the trust boundary, and is marked
+// no-store so a transient error is never cached as a credential verdict.
+func writeRefreshError(w http.ResponseWriter, r *http.Request, status int, code, description string, err error) {
+	getLog(r).
+		WithField("status", status).
+		WithField("oauth_error", code).
+		WithError(err).
+		Info("refresh")
+
+	body, jerr := json.Marshal(struct {
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description,omitempty"`
+	}{Error: code, ErrorDescription: description})
+	if jerr != nil {
+		// Unreachable for plain strings, but never write a partial body.
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	if _, werr := w.Write(body); werr != nil {
+		// status already written
+		getLog(r).WithError(werr).Info("refresh: write error response")
+	}
 }
 
 // logging helpers. aliased for convenience
