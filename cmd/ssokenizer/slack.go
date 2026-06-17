@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
+
+	ssooauth2 "github.com/superfly/ssokenizer/oauth2"
 
 	"github.com/slack-go/slack"
 	"golang.org/x/oauth2"
@@ -43,9 +46,42 @@ func slackExchange(ctx context.Context, conf oauth2.Config, code string, opts ..
 func slackRefresh(ctx context.Context, conf oauth2.Config, refreshToken *oauth2.Token) (*oauth2.Token, error) {
 	r, err := slack.RefreshOAuthV2TokenContext(ctx, http.DefaultClient, conf.ClientID, conf.ClientSecret, refreshToken.RefreshToken)
 	if err != nil {
-		return nil, err
+		return nil, slackRefreshError(err)
 	}
 	return slackToToken(r), nil
+}
+
+// slackDeadTokenErrors are Slack oauth.v2.access error codes that mean the
+// refresh token is permanently unusable and the user must re-authorize. Slack
+// reports these as HTTP 200 with {"ok":false,"error":"..."} (slack-go parses
+// them into slack.SlackErrorResponse); on a non-200 the body is not parsed and
+// the code is unavailable, so those are left to the transient path.
+// https://docs.slack.dev/authentication/using-token-rotation/
+var slackDeadTokenErrors = map[string]bool{
+	"invalid_refresh_token": true,
+	"token_revoked":         true,
+	"token_expired":         true,
+	"account_inactive":      true,
+}
+
+// slackRefreshError normalizes a definitive Slack refresh failure to a
+// ssooauth2.RefreshError carrying RFC 6749 "invalid_grant" so handleRefresh
+// forwards a 400 the downstream consumer can act on. Slack's own error
+// vocabulary is not RFC 6749, so only the codes we positively recognize as
+// dead-credential signals are translated; anything else is returned unchanged
+// and falls through to the transient 502 path — we never risk marking a live
+// connection broken on an ambiguous error.
+func slackRefreshError(err error) error {
+	var se slack.SlackErrorResponse
+	if errors.As(err, &se) && slackDeadTokenErrors[se.Err] {
+		return &ssooauth2.RefreshError{
+			Status:      http.StatusBadRequest,
+			Code:        "invalid_grant",
+			Description: "slack: " + se.Err,
+			Err:         err,
+		}
+	}
+	return err
 }
 
 func slackToToken(r *slack.OAuthV2Response) *oauth2.Token {
