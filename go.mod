@@ -8,7 +8,7 @@ require (
 	github.com/slack-go/slack v0.23.1
 	github.com/superfly/tokenizer v0.0.3-0.20250311175830-aae794513aa1
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/oauth2 v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
 )
